@@ -1,10 +1,11 @@
 import socket
 import threading
-import struct
+import time
 import os
 from flags import Flags
-from fragment import *
+from helper import *
 from binascii import crc_hqx
+
 """
 Flags:
 SYN =                0b00000001  = 1
@@ -43,6 +44,10 @@ class PEER:
         self.destination_ip = dest_ip
         self.destination_port = dest_port
 
+        self.save_folder_path = "downloads"
+        self.save_file_name = "test01"
+        self.save_file_extension = "txt"
+
         self.done_handshake = False
         self.MAX_FRAGMENT_SIZE = 1465
 
@@ -50,23 +55,19 @@ class PEER:
         self.recv_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.recv_sock.bind((self.local_ip, self.local_port))
 
-    def send_response(self, seq_num, crc16, flag, client):
-        header = create_header(seq_num, crc16, flag)
-        self.recv_sock.sendto(header, client)
-
     def establish_connection(self):
         number_of_tries = 0
         while number_of_tries < 3:
             send_system_message(self.send_sock, (self.destination_ip, self.destination_port), 0, 0, Flags.SYN)
             try:
-                self.send_sock.settimeout(1.0) # waiting one second for ack 
                 whole_data, _ = self.send_sock.recvfrom(self.MAX_FRAGMENT_SIZE)
                 data = unpack_received_data(whole_data)
                 if data["flag"] == Flags.ACK:
                     self.done_handshake = True
                     break
                 
-            except socket.timeout:
+            except Exception:
+                time.sleep(2) # pause for 2 seconds between each try, sleep is usable here because we cannot communicate withou handshake either way
                 number_of_tries += 1
                 continue
 
@@ -78,21 +79,35 @@ class PEER:
     def receiver(self):
         print("Starting receiver")
         recieved_text : str = ""
+        received_file_fragments : bytes = []
         while True:
             whole_data, client = self.recv_sock.recvfrom(self.MAX_FRAGMENT_SIZE)
             data = unpack_received_data(whole_data)
 
-            if data["crc"] == crc_hqx(create_header(data["seq_num"],0,data["flag"]), 0xFFFF):
-                if data["flag"] == Flags.SYN: 
+            if data['crc'] == crc_hqx(create_header(data['seq_num'],0,data['flag']) + data['data'], 0xFFFF):
+                if data['flag'] == Flags.SYN: 
                     send_system_message(self.recv_sock, client, 0, 0, Flags.ACK)
-                elif data["flag"] == Flags.SENDING_TEXT:
-                    recieved_text += data["data"].decode()
-                elif data["flag"] == Flags.LAST_TEXT_FRAGMENT:
-                    recieved_text += data["data"].decode()
+
+                elif data['flag'] == Flags.SENDING_TEXT:
+                    recieved_text += data['data'].decode()
+                    print(f"Received segment no.{data['seq_num']}")
+                elif data['flag'] == Flags.LAST_TEXT_FRAGMENT:
+                    recieved_text += data['data'].decode()
+                    print(f"Received segment no.{data['seq_num']} - last text fragment")
                     print(f"Received text: \n{recieved_text}")
                     recieved_text = ""
+
+                elif data['flag'] == Flags.SENDING_FILE:
+                    received_file_fragments.append(data['data'])
+                    print(f"Received segment no.{data['seq_num']}")
+                elif data['flag'] == Flags.LAST_FILE_FRAGMENT:
+                    received_file_fragments.append(data['data'])
+                    print(f"Received segment no.{data['seq_num']} - last file fragment")
+                    save_received_file(self.save_folder_path, received_file_fragments, self.save_file_name, self.save_file_extension)
+                    received_file_fragments = []
+
             else:
-                #!must also implement this later
+                #!best to implement functions to receive said segments
                 print("Message is corrupted, crc doesn't match") 
 
 
@@ -106,6 +121,7 @@ class PEER:
             elif user_input == "yes" or user_input == 'y':
                 if not self.done_handshake:
                     self.establish_connection()
+
                 user_input = input("Input the desired size of fragment: ")
                 if user_input.isnumeric() and  int(user_input) <= self.MAX_FRAGMENT_SIZE: 
                     fragment_size = int(user_input)
@@ -115,10 +131,16 @@ class PEER:
                 user_input = input("Do you want to send a text or a file (t/f): ")
                 if user_input == 't':
                     message = input("Input you text that you want to send: ")
-                    send_text_fragments(self.send_sock,(self.destination_ip, self.destination_port),fragment_text(message,fragment_size))
+                    send_text_fragments(self.send_sock, (self.destination_ip, self.destination_port), fragment_text(message,fragment_size))
 
                 elif user_input == 'f':
-                    print("File functionality will be done later")
+                    print("Defaults.....")
+                    file_path = input("Input path to file you want to send: ")
+                    if not os.path.exists(file_path) or not os.path.isfile(file_path):
+                        print("Given path leads to nothing or a directory!")
+                        continue
+                    else:
+                        send_file_fragments(self.send_sock, (self.destination_ip, self.destination_port), fragment_file(file_path,fragment_size))
                 else: 
                     continue
             else: 

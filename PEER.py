@@ -3,19 +3,23 @@ import threading
 import struct
 import os
 from flags import Flags
+from fragment import *
 from binascii import crc_hqx
 """
 Flags:
-SYN =                0b00000001
-ACK =                0b00000010
-NACK =               0b00000100
-KILL =               0b00001000
-KEEP_ALIVE =         0b00010000
-SENDING_TEXT =       0b00100000
-SENDING_FILE =       0b00100001
-LAST_TEXT_FRAGMENT = 0b10000000
-LAST_FILE_FRAGMENT = 0b10000001
+SYN =                0b00000001  = 1
+ACK =                0b00000010  = 2
+NACK =               0b00000100  = 4
+KILL =               0b00001000  = 8
+KEEP_ALIVE =         0b00010000  = 16
+SENDING_TEXT =       0b00100000  = 32
+SENDING_FILE =       0b00100001  = 33
+LAST_TEXT_FRAGMENT = 0b10000000  = 128
+LAST_FILE_FRAGMENT = 0b10000001  = 129
 """
+
+#! make separate functions for printing 
+#! implement proper way to end
 
 #----------------------INTERNET / AI GENERATED---------------------------------------------------
 
@@ -46,31 +50,19 @@ class PEER:
         self.recv_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.recv_sock.bind((self.local_ip, self.local_port))
 
-
-    def create_header(self, seq_num, crc16, flags):
-        return struct.pack('!IHB', seq_num, crc16, flags)
-
-    def send_message(self, seq_num, crc16, flags, data):
-        header = self.create_header(seq_num, crc16, flags)
-        if data == None: segment = header 
-        else: segment = header + data.encode('utf-8')
-        self.send_sock.sendto(segment, (self.destination_ip, self.destination_port))
-
     def send_response(self, seq_num, crc16, flag, client):
-        header = self.create_header(seq_num, crc16, flag)
+        header = create_header(seq_num, crc16, flag)
         self.recv_sock.sendto(header, client)
 
     def establish_connection(self):
         number_of_tries = 0
         while number_of_tries < 3:
-            print("Establishing connection!\nStarting HandShake!\n")
-            self.send_message(0, 0, Flags.SYN, None)
+            send_system_message(self.send_sock, (self.destination_ip, self.destination_port), 0, 0, Flags.SYN)
             try:
                 self.send_sock.settimeout(1.0) # waiting one second for ack 
                 whole_data, _ = self.send_sock.recvfrom(self.MAX_FRAGMENT_SIZE)
-                header = whole_data[:7] 
-                _, _, flag = struct.unpack("!IHB", header)
-                if flag == Flags.ACK:
+                data = unpack_received_data(whole_data)
+                if data["flag"] == Flags.ACK:
                     self.done_handshake = True
                     break
                 
@@ -78,29 +70,34 @@ class PEER:
                 number_of_tries += 1
                 continue
 
+        if number_of_tries == 3:
+            print("Couldn't establish connection. Exiting app!")
+            os._exit(0)
+
 
     def receiver(self):
         print("Starting receiver")
-        arrived = 0
+        recieved_text : str = ""
         while True:
             whole_data, client = self.recv_sock.recvfrom(self.MAX_FRAGMENT_SIZE)
-            header = whole_data[:7]
-            seq_num, crc16, flag = struct.unpack("!IHB", header)
-            data = whole_data[7:]
-            
-            if flag == Flags.SYN:
-                arrived += 1
-                if arrived == 2: 
-                    self.send_response(0, 0, Flags.ACK, client)
+            data = unpack_received_data(whole_data)
 
-            print(f"Received message: {data.decode()} from {client}")
-            print(f"Header details : seq_num: {seq_num}, sum: {crc16}, flags: {flag}")
+            if data["crc"] == crc_hqx(create_header(data["seq_num"],0,data["flag"]), 0xFFFF):
+                if data["flag"] == Flags.SYN: 
+                    send_system_message(self.recv_sock, client, 0, 0, Flags.ACK)
+                elif data["flag"] == Flags.SENDING_TEXT:
+                    recieved_text += data["data"].decode()
+                elif data["flag"] == Flags.LAST_TEXT_FRAGMENT:
+                    recieved_text += data["data"].decode()
+                    print(f"Received text: \n{recieved_text}")
+                    recieved_text = ""
+            else:
+                #!must also implement this later
+                print("Message is corrupted, crc doesn't match") 
 
 
     def sender(self):
         print("Starting sender")
-        
-        seq_num = 0
 
         while True:
             user_input = input("\nDo you want to send something?\n-yes/y : continue to specify your sending parameters \n-exit/e : quit this application\n")
@@ -109,27 +106,25 @@ class PEER:
             elif user_input == "yes" or user_input == 'y':
                 if not self.done_handshake:
                     self.establish_connection()
+                user_input = input("Input the desired size of fragment: ")
+                if user_input.isnumeric() and  int(user_input) <= self.MAX_FRAGMENT_SIZE: 
+                    fragment_size = int(user_input)
                 else:
-                    user_input = input("Input the desired size of fragment: ")
-                    if user_input.isnumeric() and  int(user_input) <= self.MAX_FRAGMENT_SIZE: 
-                        fragment_size = user_input
-                    else:
-                        continue
+                    continue
 
-                    user_input = input("Do you want to send a text or a file (t/f): ")
-                    if user_input == 't':
-                        message = input("Input you text that you want to send: ")
-                        self.send_message(seq_num, 0, Flags.SENDING_TEXT, message)
-                        seq_num += 1
+                user_input = input("Do you want to send a text or a file (t/f): ")
+                if user_input == 't':
+                    message = input("Input you text that you want to send: ")
+                    send_text_fragments(self.send_sock,(self.destination_ip, self.destination_port),fragment_text(message,fragment_size))
 
-                    elif user_input == 'f':
-                        print("File functionality will be done later")
-                    else: 
-                        continue
+                elif user_input == 'f':
+                    print("File functionality will be done later")
+                else: 
+                    continue
             else: 
                 continue
             
-        os._exit(1)
+        os._exit(0)
 
 
     def begin(self):

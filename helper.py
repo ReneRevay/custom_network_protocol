@@ -6,19 +6,6 @@ from flags import Flags
 from binascii import crc_hqx
 
 
-#----------------------INTERNET / AI GENERATED---------------------------------------------------
-
-def get_ip():
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        s.connect(('10.255.255.255', 1))   # random IP just to send a packet
-        IP = s.getsockname()[0]   # get our actual ip
-    except:
-        IP = '127.0.0.1'
-    finally:
-        s.close()
-    return IP
-
 #--------------------------------------------------------------------------------------------------
 
 
@@ -32,7 +19,7 @@ def print_sender_info(transfered_file : bool, fragment_list : list):
     else:
         for f in fragment_list: data_size += len(f)
     if transfered_file : file_name = fragment_list[0].decode().split('/')[-1]
-    fragment_count = len(fragment_list)-1 if transfered_file else len(fragment_list)
+    fragment_count = len(fragment_list)
     size_of_fragment = len(fragment_list[1]) if transfered_file else len(fragment_list[0])
 
     print("------------------------------------------------")
@@ -43,9 +30,11 @@ def print_sender_info(transfered_file : bool, fragment_list : list):
     if size_of_fragment != len(fragment_list[-1]) : print(f"Size of last fragment : {len(fragment_list[-1])}B")
     print("------------------------------------------------")
     
-def print_receiver_info(transfered_file : bool, time_to_transfer, fragment_list : list):
+def print_receiver_info(transfered_file : bool, time_to_transfer, fragment_list : list, save_folder : str):
     received_text = ""
     data_size = 0
+    saved_file_path = f"{save_folder}/{fragment_list[0].decode().split('/')[-1]}"
+    abs_save_path = os.path.abspath(saved_file_path)
     if transfered_file :
         for f in fragment_list[1:]: data_size += len(f)
     else:
@@ -56,7 +45,7 @@ def print_receiver_info(transfered_file : bool, time_to_transfer, fragment_list 
     print("------------------------------------------------")
     print(f"File received successfully!") if transfered_file else print(f"Text received successfully!") 
     if transfered_file: print(f"Name of received file : {fragment_list[0].decode().split('/')[-1]}")
-    if transfered_file: print(f"Save location of file : downloads/{fragment_list[0].decode().split('/')[-1]}")
+    if transfered_file: print(f"Save location of file : {abs_save_path}")
     if not transfered_file: print(f"Received text : {received_text}")
     print(f"Data received in : {time_to_transfer:.2f}s")
     print(f"Size of received data : {data_size}B")
@@ -109,7 +98,7 @@ def fragment_file(file_path : str, fragment_size : int) -> list:
 def send_fragments(src_socket : socket.socket, dest : tuple, fragment_list : list, flag : int, implement_error : bool) -> None:
     nack_count : int = 0
     sent_fragment_counter : int = 0
-    random_message_to_corrupt : int = random.randint(0,len(fragment_list))
+    random_message_to_corrupt : int = random.randint(0,len(fragment_list)-1)
     error_occured : bool = False
 
     while sent_fragment_counter < len(fragment_list):
@@ -158,7 +147,7 @@ def send_fragments(src_socket : socket.socket, dest : tuple, fragment_list : lis
         except Exception:
             nack_count += 1
             if nack_count == 3:
-                print("Host responding. Connection dead!")
+                print("Host not responding. Connection dead!")
                 os._exit(0)
         finally:
             src_socket.settimeout(None)

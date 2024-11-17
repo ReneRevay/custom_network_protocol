@@ -95,12 +95,15 @@ class PEER:
     def receiver(self):
         received_fragments : bytes = []
         transfer_start_time = None
+        last_received_seq_num = None
 
         while True:
             whole_data, client = self.recv_sock.recvfrom(1465)
             data = unpack_received_data(whole_data)
 
             if data['crc'] == crc_hqx(create_header(data['seq_num'],0,data['flag']) + data['data'], 0xFFFF):
+                if last_received_seq_num == 0: last_received_seq_num = None
+
                 if data['flag'] == Flags.SYN:
                     send_system_message(self.recv_sock, client, 0, 0, Flags.ACK)
 
@@ -109,34 +112,42 @@ class PEER:
                     send_system_message(self.recv_sock, client, 0, 0, Flags.ACK)
 
                 elif data['flag'] == Flags.SENDING_TEXT:
+                    if data['seq_num'] == last_received_seq_num: continue
+                    last_received_seq_num = data['seq_num']
                     if data['seq_num'] == 0 : transfer_start_time = time.time()
                     received_fragments.append(data['data'])
                     send_system_message(self.recv_sock, client, 0, 0, Flags.ACK)
                     print(f"Received segment no.{data['seq_num']} correctly!")
 
                 elif data['flag'] == Flags.LAST_TEXT_FRAGMENT:
+                    if data['seq_num'] == last_received_seq_num: continue
+                    last_received_seq_num = 0
                     received_fragments.append(data['data'])
                     send_system_message(self.recv_sock, client, 0, 0, Flags.ACK)
                     print(f"Received segment no.{data['seq_num']} correctly!")
                     if transfer_start_time == None: transfer_start_time = time.time()
-                    print_receiver_info(False, time.time() - transfer_start_time, received_fragments)
+                    print_receiver_info(False, time.time() - transfer_start_time, received_fragments, self.save_folder)
                     print_initial_dialog(self.save_folder)
                     transfer_start_time = None
                     received_fragments = []
 
                 elif data['flag'] == Flags.SENDING_FILE:
+                    if data['seq_num'] == last_received_seq_num: continue
+                    last_received_seq_num = data['seq_num']
                     if data['seq_num'] == 0 : transfer_start_time = time.time()
                     received_fragments.append(data['data'])
                     send_system_message(self.recv_sock, client, 0, 0, Flags.ACK)
                     print(f"Received segment no.{data['seq_num']} correctly!")
 
                 elif data['flag'] == Flags.LAST_FILE_FRAGMENT:
+                    if data['seq_num'] == last_received_seq_num: continue
+                    last_received_seq_num = 0
                     received_fragments.append(data['data'])
                     send_system_message(self.recv_sock, client, 0, 0, Flags.ACK)
                     print(f"Received segment no.{data['seq_num']} correctly!")
                     save_received_file(received_fragments, self.save_folder)
                     if transfer_start_time == None: transfer_start_time = time.time()
-                    print_receiver_info(True, time.time() - transfer_start_time, received_fragments)
+                    print_receiver_info(True, time.time() - transfer_start_time, received_fragments, self.save_folder)
                     print_initial_dialog(self.save_folder)
                     transfer_start_time = None
                     received_fragments = []
@@ -212,9 +223,9 @@ class PEER:
                     file_path = input("Input path to file you want to send: ")
                       
                 fragment_list = fragment_file(file_path,fragment_size)
-                print_sender_info(True,fragment_list)
                 self.stop_keep_alive.set()
                 send_fragments(self.send_sock, (self.destination_ip, self.destination_port), fragment_list, Flags.SENDING_FILE, implement_error)
+                print_sender_info(True,fragment_list)
                 self.stop_keep_alive.clear()
 
         
@@ -234,10 +245,11 @@ class PEER:
         os._exit(0)
 
 if __name__ == "__main__":
-    #local_ip = get_ip()
-    local_ip = "127.0.0.1"
+    local_ip = "169.254.153.150"
+    #local_ip = "127.0.0.1"
     local_port = int(input("Input the port you are listening on: "))
-    destination_ip = input("Input the IP of the host: ") or "127.0.0.1"
+    #destination_ip = input("Input the IP of the host: ") or "127.0.0.1"
+    destination_ip = "169.254.236.137"
     destination_port = int(input("Input the host's reciever port: "))
     peer = PEER(local_ip, local_port, destination_ip, destination_port)
     peer.begin()

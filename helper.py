@@ -33,13 +33,14 @@ def print_sender_info(transfered_file : bool, fragment_list : list):
         for f in fragment_list: data_size += len(f)
     if transfered_file : file_name = fragment_list[0].decode().split('/')[-1]
     fragment_count = len(fragment_list)-1 if transfered_file else len(fragment_list)
-    
+    size_of_fragment = len(fragment_list[1]) if transfered_file else len(fragment_list[0])
+
     print("------------------------------------------------")
     if transfered_file : print(f"Name of transfered file : {file_name}")
     print(f"Size of data to transfer : {data_size}B")
     print(f"Count of fragments to send : {fragment_count} fragmetns")
-    print(f"Size of fragments : {len(fragment_list[1])}B")
-    if len(fragment_list[1]) != len(fragment_list[-1]) : print(f"Size of last fragment : {len(fragment_list[-1])}B")
+    print(f"Size of fragments : {size_of_fragment}B")
+    if size_of_fragment != len(fragment_list[-1]) : print(f"Size of last fragment : {len(fragment_list[-1])}B")
     print("------------------------------------------------")
     
 def print_receiver_info(transfered_file : bool, time_to_transfer, fragment_list : list):

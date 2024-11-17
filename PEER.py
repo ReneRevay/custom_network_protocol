@@ -118,6 +118,7 @@ class PEER:
                     received_fragments.append(data['data'])
                     send_system_message(self.recv_sock, client, 0, 0, Flags.ACK)
                     print(f"Received segment no.{data['seq_num']} correctly!")
+                    if transfer_start_time == None: transfer_start_time = time.time()
                     print_receiver_info(False, time.time() - transfer_start_time, received_fragments)
                     print_initial_dialog(self.save_folder)
                     transfer_start_time = None
@@ -134,6 +135,7 @@ class PEER:
                     send_system_message(self.recv_sock, client, 0, 0, Flags.ACK)
                     print(f"Received segment no.{data['seq_num']} correctly!")
                     save_received_file(received_fragments, self.save_folder)
+                    if transfer_start_time == None: transfer_start_time = time.time()
                     print_receiver_info(True, time.time() - transfer_start_time, received_fragments)
                     print_initial_dialog(self.save_folder)
                     transfer_start_time = None

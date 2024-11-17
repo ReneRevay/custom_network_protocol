@@ -29,9 +29,6 @@ class PEER:
         self.destination_ip = dest_ip
         self.destination_port = dest_port
 
-        self.save_folder_path = "downloads"
-        self.save_file_name = "test01"
-        self.save_file_extension = "txt"
         self.MAX_FRAGMENT_SIZE = 1465
 
         self.done_handshake = False
@@ -44,7 +41,7 @@ class PEER:
         self.recv_sock.bind((self.local_ip, self.local_port))
 
 
-    def send_basic_keep_alive(self):
+    def keep_alive(self):
         number_of_tries = 0
         time_between_heartbeats = 5
         while True:
@@ -52,7 +49,7 @@ class PEER:
                 send_time = time.time() + time_between_heartbeats
                 
                 while time.time() < send_time:
-                    time.sleep(2)
+                    time.sleep(2) # check every 2 seconds if the other side has sent a keep alive
                     if self.reset_keep_alive.is_set():
                         send_time = time.time() + time_between_heartbeats
                         self.reset_keep_alive.clear()
@@ -64,14 +61,13 @@ class PEER:
                     data = unpack_received_data(whole_data)
                     if data['flag'] == Flags.ACK:
                         number_of_tries = 0
-            
+
                 except Exception:
                     number_of_tries += 1
         
             if number_of_tries == 3:
-                print("Keep alive didn't get through!")
-                self.done_handshake = False
-                break
+                print("Host not responding. Ending application!")
+                os._exit(0)
 
 
     def establish_connection(self):
@@ -79,28 +75,28 @@ class PEER:
         while number_of_tries < 3:
             send_system_message(self.send_sock, (self.destination_ip, self.destination_port), 0, 0, Flags.SYN)
             try:
-                whole_data, _ = self.send_sock.recvfrom(self.MAX_FRAGMENT_SIZE)
+                whole_data, client = self.send_sock.recvfrom(self.MAX_FRAGMENT_SIZE)
                 data = unpack_received_data(whole_data)
                 if data["flag"] == Flags.ACK:
+                    self.client_to_close_notify = client
                     self.done_handshake = True
                     break
                 
             except Exception:
-                time.sleep(5) # pause for 5 seconds between each try, sleep is usable here because we cannot communicate withou handshake either way
+                time.sleep(5)
                 number_of_tries += 1
-                continue
 
         if number_of_tries == 3:
-            print("Couldn't establish connection. Exiting app!")
+            print("Couldn't establish connection. Ending application!")
             os._exit(0)
 
 
     def receiver(self):
-        recieved_text : str = ""
-        received_file_fragments : bytes = []
+        received_fragments : bytes = []
+        transfer_start_time = None
 
         while True:
-            whole_data, client = self.recv_sock.recvfrom(self.MAX_FRAGMENT_SIZE)
+            whole_data, client = self.recv_sock.recvfrom(1465)
             data = unpack_received_data(whole_data)
 
             if data['crc'] == crc_hqx(create_header(data['seq_num'],0,data['flag']) + data['data'], 0xFFFF):
@@ -112,30 +108,52 @@ class PEER:
                     send_system_message(self.recv_sock, client, 0, 0, Flags.ACK)
 
                 elif data['flag'] == Flags.SENDING_TEXT:
-                    recieved_text += data['data'].decode()
-                    print(f"Received segment no.{data['seq_num']}")
+                    if data['seq_num'] == 0 : transfer_start_time = time.time()
+                    received_fragments.append(data['data'])
+                    send_system_message(self.recv_sock, client, 0, 0, Flags.ACK)
+                    print(f"Received segment no.{data['seq_num']} correctly!")
+
                 elif data['flag'] == Flags.LAST_TEXT_FRAGMENT:
-                    recieved_text += data['data'].decode()
-                    print(f"Received segment no.{data['seq_num']}")
-                    print(f"Received text: \n{recieved_text}")
-                    recieved_text = ""
+                    received_fragments.append(data['data'])
+                    send_system_message(self.recv_sock, client, 0, 0, Flags.ACK)
+                    print(f"Received segment no.{data['seq_num']} correctly!")
+                    print_receiver_info(False, time.time() - transfer_start_time, received_fragments)
+                    print_initial_dialog()
+                    transfer_start_time = None
+                    received_fragments = []
 
                 elif data['flag'] == Flags.SENDING_FILE:
-                    received_file_fragments.append(data['data'])
-                    print(f"Received segment no.{data['seq_num']}")
+                    if data['seq_num'] == 0 : transfer_start_time = time.time()
+                    received_fragments.append(data['data'])
+                    send_system_message(self.recv_sock, client, 0, 0, Flags.ACK)
+                    print(f"Received segment no.{data['seq_num']} correctly!")
+
                 elif data['flag'] == Flags.LAST_FILE_FRAGMENT:
-                    received_file_fragments.append(data['data'])
-                    print(f"Received segment no.{data['seq_num']}")
-                    save_received_file(self.save_folder_path, received_file_fragments, self.save_file_name, self.save_file_extension)
-                    received_file_fragments = []
+                    received_fragments.append(data['data'])
+                    send_system_message(self.recv_sock, client, 0, 0, Flags.ACK)
+                    print(f"Received segment no.{data['seq_num']} correctly!")
+                    save_received_file(received_fragments)
+                    print_receiver_info(True, time.time() - transfer_start_time, received_fragments)
+                    print_initial_dialog()
+                    transfer_start_time = None
+                    received_fragments = []
+
+                elif data['flag'] == Flags.KILL:
+                    send_system_message(self.recv_sock, (self.destination_ip, self.destination_port), 0, 0, Flags.ACK)
+                    print("Host disconnected. Ending application!")
+                    os._exit(0)
+
+                elif data['flag'] == Flags.ACK:
+                    print("Host disconnected. Ending application!")
+                    os._exit(0)
 
             else:
-                #!best to implement functions to receive said segments
-                print("Message is corrupted, crc doesn't match") 
+                print(f"Received segment no.{data['seq_num']} with an error!")
+                send_system_message(self.recv_sock, client, data['seq_num'], 0, Flags.NACK)
 
 
     def sender(self):
-        keep_alive_thread = threading.Thread(target=self.send_basic_keep_alive)
+        keep_alive_thread = threading.Thread(target=self.keep_alive)
 
         while True:
             user_input = input("\nDo you want to send something?\n-yes/y : continue to specify your sending parameters \n-exit/e : quit this application\n")
@@ -146,46 +164,59 @@ class PEER:
                     self.establish_connection()
                     keep_alive_thread.start() 
 
-                user_input = input("Input the desired size of fragment: ")
-                if user_input.isnumeric() and  int(user_input) <= self.MAX_FRAGMENT_SIZE: 
-                    fragment_size = int(user_input)
-                else:
-                    continue
+                user_input = input("Input the desired size of fragment, whole number <1,1465>: ")
+                while not user_input.isnumeric() or (int(user_input) > self.MAX_FRAGMENT_SIZE or int(user_input) <= 0): 
+                    user_input = input("Input the desired size of fragment, whole number <1,1465>: ")
+                fragment_size = int(user_input)
 
                 user_input = input("Do you want to send a text or a file (t/f): ")
+                while user_input != 't' and user_input != 'f':
+                    user_input = input("Do you want to send a text or a file (t/f): ")
+                
                 if user_input == 't':
-                    message = input("Input you text that you want to send: ")
+                    user_input = input("Implement error into the sending process (y/n)? ")
+                    while user_input != 'y' and user_input != 'n':
+                        user_input = input("Implement error into the sending process (y/n)? ")
+                    
+                    implement_error = 1 if user_input == 'y' else 0
+                    message = input("Input you text that you want to send: \n")
+                    fragment_list = fragment_text(message,fragment_size)
+                    print_sender_info(False,fragment_list)
                     self.stop_keep_alive.set()
-                    send_text_fragments(self.send_sock, (self.destination_ip, self.destination_port), fragment_text(message,fragment_size))
+                    send_fragments(self.send_sock, (self.destination_ip, self.destination_port), fragment_list, Flags.SENDING_TEXT, implement_error)
                     self.stop_keep_alive.clear()
 
                 elif user_input == 'f':
-                    print("Defaults.....")
+                    user_input = input("Implement error into the sending process (y/n)? ")
+                    while user_input != 'y' and user_input != 'n':
+                        user_input = input("Implement error into the sending process (y/n)? ")
+                    
+                    implement_error = 1 if user_input == 'y' else 0
                     file_path = input("Input path to file you want to send: ")
                     if not os.path.exists(file_path) or not os.path.isfile(file_path):
                         print("Given path leads to nothing or a directory!")
                         continue
                     else:
+                        fragment_list = fragment_file(file_path,fragment_size)
+                        print_sender_info(True,fragment_list)
                         self.stop_keep_alive.set()
-                        send_file_fragments(self.send_sock, (self.destination_ip, self.destination_port), fragment_file(file_path,fragment_size))
+                        send_fragments(self.send_sock, (self.destination_ip, self.destination_port), fragment_list, Flags.SENDING_FILE, implement_error)
                         self.stop_keep_alive.clear()
-                else: 
-                    continue
-            else: 
-                continue
         
-        os._exit(0)
+        self.stop_keep_alive.set()
+        send_system_message(self.send_sock, (self.destination_ip, self.destination_port), 0, 0, Flags.KILL)
 
 
     def begin(self):
-        receiver = threading.Thread(target=self.receiver, daemon=True)
+        receiver = threading.Thread(target=self.receiver)
         receiver.start()
 
-        sender = threading.Thread(target=self.sender, daemon=True)
+        sender = threading.Thread(target=self.sender)
         sender.start()
 
         sender.join()
         receiver.join()
+        os._exit(0)
 
 if __name__ == "__main__":
     #local_ip = get_ip()

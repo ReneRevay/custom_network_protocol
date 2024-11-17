@@ -22,8 +22,8 @@ def get_ip():
 #--------------------------------------------------------------------------------------------------
 
 
-def print_initial_dialog():
-    print("\nDo you want to send something?\n-yes/y : continue to specify your sending parameters \n-exit/e : quit this application")
+def print_initial_dialog(save_folder : str):
+    print(f"\nApp is ready. Make sure the other side is also up!\n-txt/t : send text\n-file/f : send file\n-s/d : change the path where would you like to store files you receive. Current is: {save_folder}\n-exit/e : quit this application\n")
 
 def print_sender_info(transfered_file : bool, fragment_list : list):
     data_size = 0
@@ -163,14 +163,14 @@ def send_fragments(src_socket : socket.socket, dest : tuple, fragment_list : lis
             src_socket.settimeout(None)
 
 
-def save_received_file(file_fragments : list) -> None:
+def save_received_file(file_fragments : list, save_folder : str) -> None:
     file_name : str = file_fragments[0].decode().split('/')[-1]
     file_fragments : list = file_fragments[1:]
 
-    if not os.path.exists("downloads"): 
-        os.makedirs("downloads")
+    if not os.path.exists(save_folder): 
+        os.makedirs(save_folder)
 
-    save_path : str = os.path.join("downloads", file_name)
+    save_path : str = os.path.join(save_folder, file_name)
 
     with open(save_path, 'wb') as file:
         for fragment in file_fragments:

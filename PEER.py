@@ -30,7 +30,8 @@ class PEER:
         self.destination_port = dest_port
 
         self.MAX_FRAGMENT_SIZE = 1465
-
+    
+        self.save_folder = "downloads"
         self.done_handshake = False
 
         self.stop_keep_alive = threading.Event()
@@ -118,7 +119,7 @@ class PEER:
                     send_system_message(self.recv_sock, client, 0, 0, Flags.ACK)
                     print(f"Received segment no.{data['seq_num']} correctly!")
                     print_receiver_info(False, time.time() - transfer_start_time, received_fragments)
-                    print_initial_dialog()
+                    print_initial_dialog(self.save_folder)
                     transfer_start_time = None
                     received_fragments = []
 
@@ -132,9 +133,9 @@ class PEER:
                     received_fragments.append(data['data'])
                     send_system_message(self.recv_sock, client, 0, 0, Flags.ACK)
                     print(f"Received segment no.{data['seq_num']} correctly!")
-                    save_received_file(received_fragments)
+                    save_received_file(received_fragments, self.save_folder)
                     print_receiver_info(True, time.time() - transfer_start_time, received_fragments)
-                    print_initial_dialog()
+                    print_initial_dialog(self.save_folder)
                     transfer_start_time = None
                     received_fragments = []
 
@@ -156,52 +157,64 @@ class PEER:
         keep_alive_thread = threading.Thread(target=self.keep_alive)
 
         while True:
-            user_input = input("\nDo you want to send something?\n-yes/y : continue to specify your sending parameters \n-exit/e : quit this application\n")
+            user_input = input(f"\nApp is ready. Make sure the other side is also up!\n-txt/t : send text\n-file/f : send file\n-s/d : change the path where would you like to store files you receive. Current is: {self.save_folder}\n-exit/e : quit this application\n")
             if user_input == "exit" or user_input == 'e':
                 break
-            elif user_input == "yes" or user_input == 'y':
+
+            elif user_input == "txt" or user_input == 't' or user_input == "file" or user_input == 'f':
                 if not self.done_handshake:
                     self.establish_connection()
-                    keep_alive_thread.start() 
+                    keep_alive_thread.start()
 
+            elif user_input == 'd' or user_input == 's':
+                save_folder = input("Please input new path where received files will be saved: ")
+                while not os.path.exists(save_folder) or not os.path.isdir(save_folder):
+                    print("Given path leads to nothing or a file!")
+                    save_folder = input("Please input new path where received files will be saved: ")
+                self.save_folder = save_folder
+
+
+            if user_input == "txt" or user_input == 't':
                 user_input = input("Input the desired size of fragment, whole number <1,1465>: ")
                 while not user_input.isnumeric() or (int(user_input) > self.MAX_FRAGMENT_SIZE or int(user_input) <= 0): 
                     user_input = input("Input the desired size of fragment, whole number <1,1465>: ")
                 fragment_size = int(user_input)
 
-                user_input = input("Do you want to send a text or a file (t/f): ")
-                while user_input != 't' and user_input != 'f':
-                    user_input = input("Do you want to send a text or a file (t/f): ")
+                user_input = input("Implement error into the sending process (y/n)? ")
+                while user_input != 'y' and user_input != 'n':
+                    user_input = input("Implement error into the sending process (y/n)? ")
                 
-                if user_input == 't':
-                    user_input = input("Implement error into the sending process (y/n)? ")
-                    while user_input != 'y' and user_input != 'n':
-                        user_input = input("Implement error into the sending process (y/n)? ")
-                    
-                    implement_error = 1 if user_input == 'y' else 0
-                    message = input("Input you text that you want to send: \n")
-                    fragment_list = fragment_text(message,fragment_size)
-                    print_sender_info(False,fragment_list)
-                    self.stop_keep_alive.set()
-                    send_fragments(self.send_sock, (self.destination_ip, self.destination_port), fragment_list, Flags.SENDING_TEXT, implement_error)
-                    self.stop_keep_alive.clear()
+                implement_error = 1 if user_input == 'y' else 0
+                message = input("Input you text that you want to send: \n")
+                fragment_list = fragment_text(message,fragment_size)
+                print_sender_info(False,fragment_list)
+                self.stop_keep_alive.set()
+                send_fragments(self.send_sock, (self.destination_ip, self.destination_port), fragment_list, Flags.SENDING_TEXT, implement_error)
+                self.stop_keep_alive.clear()
+                
 
-                elif user_input == 'f':
+            elif user_input == "file" or user_input == 'f':
+                user_input = input("Input the desired size of fragment, whole number <1,1465>: ")
+                while not user_input.isnumeric() or (int(user_input) > self.MAX_FRAGMENT_SIZE or int(user_input) <= 0): 
+                    user_input = input("Input the desired size of fragment, whole number <1,1465>: ")
+                fragment_size = int(user_input)
+
+                user_input = input("Implement error into the sending process (y/n)? ")
+                while user_input != 'y' and user_input != 'n':
                     user_input = input("Implement error into the sending process (y/n)? ")
-                    while user_input != 'y' and user_input != 'n':
-                        user_input = input("Implement error into the sending process (y/n)? ")
-                    
-                    implement_error = 1 if user_input == 'y' else 0
+                implement_error = 1 if user_input == 'y' else 0
+                
+                file_path = input("Input path to file you want to send: ")
+                while not os.path.exists(file_path) or not os.path.isfile(file_path):
+                    print("Given path leads to nothing or a directory!")
                     file_path = input("Input path to file you want to send: ")
-                    if not os.path.exists(file_path) or not os.path.isfile(file_path):
-                        print("Given path leads to nothing or a directory!")
-                        continue
-                    else:
-                        fragment_list = fragment_file(file_path,fragment_size)
-                        print_sender_info(True,fragment_list)
-                        self.stop_keep_alive.set()
-                        send_fragments(self.send_sock, (self.destination_ip, self.destination_port), fragment_list, Flags.SENDING_FILE, implement_error)
-                        self.stop_keep_alive.clear()
+                      
+                fragment_list = fragment_file(file_path,fragment_size)
+                print_sender_info(True,fragment_list)
+                self.stop_keep_alive.set()
+                send_fragments(self.send_sock, (self.destination_ip, self.destination_port), fragment_list, Flags.SENDING_FILE, implement_error)
+                self.stop_keep_alive.clear()
+
         
         self.stop_keep_alive.set()
         send_system_message(self.send_sock, (self.destination_ip, self.destination_port), 0, 0, Flags.KILL)

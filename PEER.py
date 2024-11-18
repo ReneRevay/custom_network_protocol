@@ -245,11 +245,12 @@ class PEER:
         os._exit(0)
 
 if __name__ == "__main__":
-    local_ip = "169.254.153.150"
-    #local_ip = "127.0.0.1"
-    local_port = int(input("Input the port you are listening on: "))
-    #destination_ip = input("Input the IP of the host: ") or "127.0.0.1"
-    destination_ip = "169.254.236.137"
-    destination_port = int(input("Input the host's reciever port: "))
-    peer = PEER(local_ip, local_port, destination_ip, destination_port)
+    """
+    p1_testing_conn_string = 127.0.0.1::12341::127.0.0.1::12342
+    p2_testing_conn_string = 127.0.0.1::12342::127.0.0.1::12341
+    """
+
+    connection_string = input("Please input the connection string in format (local_ip::local_port::dest_ip::dest_port):\n")
+    connection_string = connection_string.split('::')
+    peer = PEER(connection_string[0], int(connection_string[1]), connection_string[2], int(connection_string[3]))
     peer.begin()

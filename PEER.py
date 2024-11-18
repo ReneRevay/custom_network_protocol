@@ -19,9 +19,6 @@ LAST_TEXT_FRAGMENT = 0b10000000  = 128
 LAST_FILE_FRAGMENT = 0b10000001  = 129
 """
 
-#! make separate functions for printing 
-#! implement proper way to end
-
 class PEER:
     def __init__(self, local_ip, local_port, dest_ip, dest_port):
         self.local_ip = local_ip
@@ -247,7 +244,7 @@ class PEER:
 if __name__ == "__main__":
     """
     p1_testing_conn_string = 127.0.0.1::12341::127.0.0.1::12342
-    p2_testing_conn_string = 127.0.0.1::12342::127.0.0.1::12341
+    p2_testing_conn_string = 127.0.0.1::12341::127.0.0.1::12342
     """
 
     connection_string = input("Please input the connection string in format (local_ip::local_port::dest_ip::dest_port):\n")

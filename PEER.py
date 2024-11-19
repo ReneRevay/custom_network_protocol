@@ -73,15 +73,14 @@ class PEER:
         while number_of_tries < 3:
             send_system_message(self.send_sock, (self.destination_ip, self.destination_port), 0, 0, Flags.SYN)
             try:
-                whole_data, client = self.send_sock.recvfrom(self.MAX_FRAGMENT_SIZE)
+                self.send_sock.settimeout(5)
+                whole_data, _ = self.send_sock.recvfrom(self.MAX_FRAGMENT_SIZE)
                 data = unpack_received_data(whole_data)
                 if data["flag"] == Flags.ACK:
-                    self.client_to_close_notify = client
                     self.done_handshake = True
                     break
                 
             except Exception:
-                time.sleep(5)
                 number_of_tries += 1
 
         if number_of_tries == 3:
@@ -218,7 +217,6 @@ class PEER:
                 while not os.path.exists(file_path) or not os.path.isfile(file_path):
                     print("Given path leads to nothing or a directory!")
                     file_path = input("Input path to file you want to send: ")
-                      
                 fragment_list = fragment_file(file_path,fragment_size)
                 self.stop_keep_alive.set()
                 send_fragments(self.send_sock, (self.destination_ip, self.destination_port), fragment_list, Flags.SENDING_FILE, implement_error)
@@ -245,9 +243,13 @@ if __name__ == "__main__":
     """
     p1_testing_conn_string = 127.0.0.1::12341::127.0.0.1::12342
     p2_testing_conn_string = 127.0.0.1::12341::127.0.0.1::12342
+    rene_testing = 169.254.153.150::12341::169.254.153.151::12342
+    pedro_testing = 169.254.153.151::12342::169.254.153.152::12341
+
     """
 
-    connection_string = input("Please input the connection string in format (local_ip::local_port::dest_ip::dest_port):\n")
+    #connection_string = input("Please input the connection string in format (local_ip::local_port::dest_ip::dest_port):\n")
+    connection_string = "169.254.153.150::12341::169.254.153.151::12342"
     connection_string = connection_string.split('::')
     peer = PEER(connection_string[0], int(connection_string[1]), connection_string[2], int(connection_string[3]))
     peer.begin()

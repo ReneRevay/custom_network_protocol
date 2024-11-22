@@ -2,11 +2,9 @@ import os
 import socket
 import struct
 import random
+import re
 from flags import Flags
 from binascii import crc_hqx
-
-
-#--------------------------------------------------------------------------------------------------
 
 
 def print_initial_dialog(save_folder : str):
@@ -53,7 +51,11 @@ def print_receiver_info(transfered_file : bool, time_to_transfer, fragment_list 
     
 
 
-def create_header(seq_num, crc16, flags):
+def validate_connection_string(connection_string: str) -> bool:
+    format_pattern = r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}::\d+::\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}::\d+$'
+    return bool(re.match(format_pattern, connection_string))
+
+def create_header(seq_num, crc16, flags) -> bytes :
     return struct.pack('!IHB', seq_num, crc16, flags)
 
 
@@ -75,6 +77,7 @@ def send_system_message(src_socket : socket.socket, dest : tuple, seq_num : int,
     src_socket.sendto(create_header(seq_num,crc16,flag), dest)
 
 
+#            AI generated
 def fragment_text(text : str, fragment_size : int) -> list:
     fragment_list : list = []
     for i in range(0, len(text), fragment_size):
@@ -82,6 +85,7 @@ def fragment_text(text : str, fragment_size : int) -> list:
     return fragment_list
 
 
+#            AI generated
 def fragment_file(file_path : str, fragment_size : int) -> list:
     fragment_list : list = []
     fragment_list.append(file_path.encode('utf-8'))
@@ -106,17 +110,17 @@ def send_fragments(src_socket : socket.socket, dest : tuple, fragment_list : lis
 
         if sent_fragment_counter == len(fragment_list) - 1:
             if flag == Flags.SENDING_FILE:
-                crc16 = crc_hqx(create_header(sent_fragment_counter,0,Flags.LAST_FILE_FRAGMENT) + fragment, 0xFFFF)
+                crc16 = crc_hqx(create_header(sent_fragment_counter,0,Flags.LAST_FILE) + fragment, 0xFFFF)
                 if random_message_to_corrupt == sent_fragment_counter and implement_error and not error_occured:
                     crc16 = crc16 - 123 # to cause a missmatch, thus error will occur
                     error_occured = True
-                header = create_header(sent_fragment_counter, crc16, Flags.LAST_FILE_FRAGMENT)
+                header = create_header(sent_fragment_counter, crc16, Flags.LAST_FILE)
             else:
-                crc16 = crc_hqx(create_header(sent_fragment_counter,0,Flags.LAST_TEXT_FRAGMENT) + fragment.encode('utf-8'), 0xFFFF)
+                crc16 = crc_hqx(create_header(sent_fragment_counter,0,Flags.LAST_TEXT) + fragment.encode('utf-8'), 0xFFFF)
                 if random_message_to_corrupt == sent_fragment_counter and implement_error and not error_occured:
                     crc16 = crc16 - 123 # to cause a missmatch, thus error will occur
                     error_occured = True
-                header = create_header(sent_fragment_counter, crc16, Flags.LAST_TEXT_FRAGMENT)
+                header = create_header(sent_fragment_counter, crc16, Flags.LAST_TEXT)
         else:
             if flag == Flags.SENDING_FILE:
                 crc16 = crc_hqx(create_header(sent_fragment_counter,0,flag) + fragment, 0xFFFF)
@@ -150,9 +154,11 @@ def send_fragments(src_socket : socket.socket, dest : tuple, fragment_list : lis
                 print("Host not responding. Connection dead!")
                 os._exit(0)
         finally:
+            nack_count = 0
             src_socket.settimeout(None)
 
 
+#            AI generated
 def save_received_file(file_fragments : list, save_folder : str) -> None:
     file_name : str = file_fragments[0].decode().split('/')[-1]
     file_fragments : list = file_fragments[1:]
@@ -165,6 +171,3 @@ def save_received_file(file_fragments : list, save_folder : str) -> None:
     with open(save_path, 'wb') as file:
         for fragment in file_fragments:
             file.write(fragment)
-
-    
-    

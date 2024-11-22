@@ -15,8 +15,8 @@ KILL =               0b00001000  = 8
 KEEP_ALIVE =         0b00010000  = 16
 SENDING_TEXT =       0b00100000  = 32
 SENDING_FILE =       0b00100001  = 33
-LAST_TEXT_FRAGMENT = 0b10000000  = 128
-LAST_FILE_FRAGMENT = 0b10000001  = 129
+LAST_TEXT =          0b10000000  = 128
+LAST_FILE =          0b10000001  = 129
 """
 
 class PEER:
@@ -69,24 +69,22 @@ class PEER:
 
 
     def establish_connection(self):
-        number_of_tries = 0
-        while number_of_tries < 3:
-            send_system_message(self.send_sock, (self.destination_ip, self.destination_port), 0, 0, Flags.SYN)
+        send_system_message(self.send_sock, (self.destination_ip, self.destination_port), 0, 0, Flags.SYN)
+        for _ in range(4):
             try:
                 self.send_sock.settimeout(5)
                 whole_data, _ = self.send_sock.recvfrom(self.MAX_FRAGMENT_SIZE)
                 data = unpack_received_data(whole_data)
                 if data["flag"] == Flags.ACK:
                     self.done_handshake = True
-                    break
+                    return
                 
-            except Exception:
-                number_of_tries += 1
-
-        if number_of_tries == 3:
-            print("Couldn't establish connection. Ending application!")
-            os._exit(0)
-
+            except socket.timeout:
+                send_system_message(self.send_sock, (self.destination_ip, self.destination_port), 0, 0, Flags.SYN)
+            except ConnectionResetError:
+                pass
+        
+        print("Host not responding!")
 
     def receiver(self):
         received_fragments : bytes = []
@@ -102,7 +100,7 @@ class PEER:
 
                 if data['flag'] == Flags.SYN:
                     send_system_message(self.recv_sock, client, 0, 0, Flags.ACK)
-
+                    
                 elif data['flag'] == Flags.KEEP_ALIVE:
                     self.reset_keep_alive.set()
                     send_system_message(self.recv_sock, client, 0, 0, Flags.ACK)
@@ -115,7 +113,7 @@ class PEER:
                     send_system_message(self.recv_sock, client, 0, 0, Flags.ACK)
                     print(f"Received segment no.{data['seq_num']} correctly!")
 
-                elif data['flag'] == Flags.LAST_TEXT_FRAGMENT:
+                elif data['flag'] == Flags.LAST_TEXT:
                     if data['seq_num'] == last_received_seq_num: continue
                     last_received_seq_num = 0
                     received_fragments.append(data['data'])
@@ -135,7 +133,7 @@ class PEER:
                     send_system_message(self.recv_sock, client, 0, 0, Flags.ACK)
                     print(f"Received segment no.{data['seq_num']} correctly!")
 
-                elif data['flag'] == Flags.LAST_FILE_FRAGMENT:
+                elif data['flag'] == Flags.LAST_FILE:
                     if data['seq_num'] == last_received_seq_num: continue
                     last_received_seq_num = 0
                     received_fragments.append(data['data'])
@@ -149,11 +147,7 @@ class PEER:
                     received_fragments = []
 
                 elif data['flag'] == Flags.KILL:
-                    send_system_message(self.recv_sock, (self.destination_ip, self.destination_port), 0, 0, Flags.ACK)
-                    print("Host disconnected. Ending application!")
-                    os._exit(0)
-
-                elif data['flag'] == Flags.ACK:
+                    send_system_message(self.recv_sock, client, 0, 0, Flags.ACK)
                     print("Host disconnected. Ending application!")
                     os._exit(0)
 
@@ -164,6 +158,7 @@ class PEER:
 
     def sender(self):
         keep_alive_thread = threading.Thread(target=self.keep_alive)
+        started_keep_alive = False
 
         while True:
             user_input = input(f"\nApp is ready. Make sure the other side is also up!\n-txt/t : send text\n-file/f : send file\n-s/d : change the path where would you like to store files you receive. Current is: {self.save_folder}\n-exit/e : quit this application\n")
@@ -173,7 +168,11 @@ class PEER:
             elif user_input == "txt" or user_input == 't' or user_input == "file" or user_input == 'f':
                 if not self.done_handshake:
                     self.establish_connection()
+                    if not self.done_handshake: continue
+                
+                if self.done_handshake and not started_keep_alive:
                     keep_alive_thread.start()
+                    started_keep_alive = True
 
             elif user_input == 'd' or user_input == 's':
                 save_folder = input("Please input new path where received files will be saved: ")
@@ -226,7 +225,23 @@ class PEER:
         
         self.stop_keep_alive.set()
         send_system_message(self.send_sock, (self.destination_ip, self.destination_port), 0, 0, Flags.KILL)
-
+        for _ in range(4):
+            try:
+                self.send_sock.settimeout(5)
+                whole_data, _ = self.send_sock.recvfrom(self.MAX_FRAGMENT_SIZE)
+                data = unpack_received_data(whole_data)
+                if data["flag"] == Flags.ACK:
+                    self.done_handshake = True
+                    print("Ending application!")
+                    os._exit(0)
+            
+            except socket.timeout:
+                send_system_message(self.send_sock, (self.destination_ip, self.destination_port), 0, 0, Flags.KILL)
+            except ConnectionResetError:
+                pass
+        
+        print("Host not responding. Ending application!")
+        os._exit(0)
 
     def begin(self):
         receiver = threading.Thread(target=self.receiver)
@@ -242,14 +257,16 @@ class PEER:
 if __name__ == "__main__":
     """
     p1_testing_conn_string = 127.0.0.1::12341::127.0.0.1::12342
-    p2_testing_conn_string = 127.0.0.1::12341::127.0.0.1::12342
-    rene_testing = 169.254.153.150::12341::169.254.153.151::12342
-    pedro_testing = 169.254.153.151::12342::169.254.153.152::12341
-
+    p2_testing_conn_string = 127.0.0.1::12342::127.0.0.1::12341
+    r_testing = 169.254.153.150::12341::169.254.153.151::12342
+    p_testing = 169.254.153.151::12342::169.254.153.152::12341
     """
 
-    #connection_string = input("Please input the connection string in format (local_ip::local_port::dest_ip::dest_port):\n")
-    connection_string = "169.254.153.150::12341::169.254.153.151::12342"
+    connection_string = input("Please input the connection string in format (local_ip::local_port::dest_ip::dest_port):\n")
+    while not validate_connection_string(connection_string):
+        connection_string = input("Please input the connection string in format (local_ip::local_port::dest_ip::dest_port):\n")
+    
     connection_string = connection_string.split('::')
+    
     peer = PEER(connection_string[0], int(connection_string[1]), connection_string[2], int(connection_string[3]))
     peer.begin()

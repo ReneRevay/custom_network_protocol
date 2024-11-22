@@ -55,7 +55,7 @@ class PEER:
                 send_system_message(self.send_sock, (self.destination_ip, self.destination_port), 0, 0, Flags.KEEP_ALIVE)
                 try:
                     self.send_sock.settimeout(5.0)
-                    whole_data, _ = self.send_sock.recvfrom(self.MAX_FRAGMENT_SIZE)
+                    whole_data, _ = self.send_sock.recvfrom(2048)
                     data = unpack_received_data(whole_data)
                     if data['flag'] == Flags.ACK:
                         number_of_tries = 0
@@ -73,7 +73,7 @@ class PEER:
         for _ in range(4):
             try:
                 self.send_sock.settimeout(5)
-                whole_data, _ = self.send_sock.recvfrom(self.MAX_FRAGMENT_SIZE)
+                whole_data, _ = self.send_sock.recvfrom(2048)
                 data = unpack_received_data(whole_data)
                 if data["flag"] == Flags.ACK:
                     self.done_handshake = True
@@ -92,7 +92,7 @@ class PEER:
         last_received_seq_num = None
 
         while True:
-            whole_data, client = self.recv_sock.recvfrom(1465)
+            whole_data, client = self.recv_sock.recvfrom(2048)
             data = unpack_received_data(whole_data)
 
             if data['crc'] == crc_hqx(create_header(data['seq_num'],0,data['flag']) + data['data'], 0xFFFF):
@@ -228,7 +228,7 @@ class PEER:
         for _ in range(4):
             try:
                 self.send_sock.settimeout(5)
-                whole_data, _ = self.send_sock.recvfrom(self.MAX_FRAGMENT_SIZE)
+                whole_data, _ = self.send_sock.recvfrom(2048)
                 data = unpack_received_data(whole_data)
                 if data["flag"] == Flags.ACK:
                     self.done_handshake = True

@@ -141,7 +141,7 @@ def send_fragments(src_socket : socket.socket, dest : tuple, fragment_list : lis
         
         try:
             src_socket.settimeout(5)
-            whole_data, _ = src_socket.recvfrom(1465)
+            whole_data, _ = src_socket.recvfrom(2048)
             data = unpack_received_data(whole_data)
             if data["flag"] == Flags.ACK:
                 sent_fragment_counter += 1

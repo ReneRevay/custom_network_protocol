@@ -70,7 +70,7 @@ class PEER:
 
     def establish_connection(self):
         send_system_message(self.send_sock, (self.destination_ip, self.destination_port), 0, 0, Flags.SYN)
-        for _ in range(4):
+        for _ in range(3):
             try:
                 self.send_sock.settimeout(5)
                 whole_data, _ = self.send_sock.recvfrom(2048)
@@ -106,15 +106,21 @@ class PEER:
                     send_system_message(self.recv_sock, client, 0, 0, Flags.ACK)
 
                 elif data['flag'] == Flags.SENDING_TEXT:
-                    if data['seq_num'] == last_received_seq_num: continue
+                    if data['seq_num'] == last_received_seq_num: 
+                        send_system_message(self.recv_sock, client, 0, 0, Flags.ACK)
+                        continue
                     last_received_seq_num = data['seq_num']
-                    if data['seq_num'] == 0 : transfer_start_time = time.time()
+                    if data['seq_num'] == 0 : 
+                        self.stop_keep_alive.set()
+                        transfer_start_time = time.time()
                     received_fragments.append(data['data'])
                     send_system_message(self.recv_sock, client, 0, 0, Flags.ACK)
                     print(f"Received segment no.{data['seq_num']} correctly!")
 
                 elif data['flag'] == Flags.LAST_TEXT:
-                    if data['seq_num'] == last_received_seq_num: continue
+                    if data['seq_num'] == last_received_seq_num: 
+                        send_system_message(self.recv_sock, client, 0, 0, Flags.ACK)
+                        continue
                     last_received_seq_num = 0
                     received_fragments.append(data['data'])
                     send_system_message(self.recv_sock, client, 0, 0, Flags.ACK)
@@ -123,18 +129,25 @@ class PEER:
                     print_receiver_info(False, time.time() - transfer_start_time, received_fragments, self.save_folder)
                     print_initial_dialog(self.save_folder)
                     transfer_start_time = None
+                    self.stop_keep_alive.clear()
                     received_fragments = []
 
                 elif data['flag'] == Flags.SENDING_FILE:
-                    if data['seq_num'] == last_received_seq_num: continue
+                    if data['seq_num'] == last_received_seq_num: 
+                        send_system_message(self.recv_sock, client, 0, 0, Flags.ACK)
+                        continue
                     last_received_seq_num = data['seq_num']
-                    if data['seq_num'] == 0 : transfer_start_time = time.time()
+                    if data['seq_num'] == 0 : 
+                        self.stop_keep_alive.set()
+                        transfer_start_time = time.time()
                     received_fragments.append(data['data'])
                     send_system_message(self.recv_sock, client, 0, 0, Flags.ACK)
                     print(f"Received segment no.{data['seq_num']} correctly!")
 
                 elif data['flag'] == Flags.LAST_FILE:
-                    if data['seq_num'] == last_received_seq_num: continue
+                    if data['seq_num'] == last_received_seq_num: 
+                        send_system_message(self.recv_sock, client, 0, 0, Flags.ACK)
+                        continue
                     last_received_seq_num = 0
                     received_fragments.append(data['data'])
                     send_system_message(self.recv_sock, client, 0, 0, Flags.ACK)
@@ -144,6 +157,7 @@ class PEER:
                     print_receiver_info(True, time.time() - transfer_start_time, received_fragments, self.save_folder)
                     print_initial_dialog(self.save_folder)
                     transfer_start_time = None
+                    self.stop_keep_alive.clear()
                     received_fragments = []
 
                 elif data['flag'] == Flags.KILL:
@@ -216,6 +230,7 @@ class PEER:
                 while not os.path.exists(file_path) or not os.path.isfile(file_path):
                     print("Given path leads to nothing or a directory!")
                     file_path = input("Input path to file you want to send: ")
+                
                 fragment_list = fragment_file(file_path,fragment_size)
                 self.stop_keep_alive.set()
                 send_fragments(self.send_sock, (self.destination_ip, self.destination_port), fragment_list, Flags.SENDING_FILE, implement_error)
@@ -259,10 +274,11 @@ if __name__ == "__main__":
     p1_testing_conn_string = 127.0.0.1::12341::127.0.0.1::12342
     p2_testing_conn_string = 127.0.0.1::12342::127.0.0.1::12341
     r_testing = 169.254.153.150::12341::169.254.153.151::12342
-    p_testing = 169.254.153.151::12342::169.254.153.152::12341
+    p_testing = 169.254.153.151::12342::169.254.153.150::12341
+    s_testing = 169.254.153.150::12341::169.254.236.137::12342
     """
 
-    connection_string = input("Please input the connection string in format (local_ip::local_port::dest_ip::dest_port):\n")
+    connection_string = "169.254.153.150::12341::169.254.236.137::12342"
     while not validate_connection_string(connection_string):
         connection_string = input("Please input the connection string in format (local_ip::local_port::dest_ip::dest_port):\n")
     

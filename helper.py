@@ -153,9 +153,6 @@ def send_fragments(src_socket : socket.socket, dest : tuple, fragment_list : lis
             if nack_count == 3:
                 print("Host not responding. Connection dead!")
                 os._exit(0)
-        finally:
-            nack_count = 0
-            src_socket.settimeout(None)
 
 
 #            AI generated
